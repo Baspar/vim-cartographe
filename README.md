@@ -1,1 +1,1 @@
-# vim-geomat
+# vim-cartographe
