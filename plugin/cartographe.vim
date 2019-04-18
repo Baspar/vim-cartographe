@@ -113,8 +113,8 @@ func! s:ReadVariables(pattern)
     return variables_info
 endfunc!
 
-func! s:ExtractVariables(string_to_match, pattern)
-    let variables_values = matchlist(a:string_to_match, substitute(a:pattern."$", "{[^}]*}", "\\\\([^/]*\\\\)", "g"))[1:]
+func! s:ExtractVariables(root, string_to_match, pattern)
+    let variables_values = matchlist(a:string_to_match, substitute(a:root.'/\(.*\)/'.a:pattern."$", "{[^}]*}", "\\\\([^/]*\\\\)", "g"))[1:]
     let variables_info = s:ReadVariables(a:pattern)
 
     return {
@@ -145,19 +145,46 @@ func! s:ExtractRoot(file_path, pattern)
     return matchlist(a:file_path, '^\(.*\)'.sanitized_path)[1]
 endfunc
 
+" func! s:FindCurrentFileInfo(settings)
+"     if exists('b:CartographeBufferInfo')
+"         return b:CartographeBufferInfo
+"     endif
+"
+"     let file_path = expand("%:p")
+"     let pairs = items(a:settings)
+"
+"     for type in keys(a:settings)
+"         let pattern = a:settings[type]
+"         let variables_info = s:ExtractVariables(file_path, pattern)
+"         let checked_variables = s:CheckExtractedVariables(variables_info)
+"         if !s:HasError(checked_variables)
+"             let checked_variables['type'] = type
+"             let root = s:ExtractRoot(file_path, pattern)
+"             let info = {
+"                         \ 'variables': checked_variables,
+"                         \ 'root': root
+"                         \ }
+"             let b:CartographeBufferInfo = info
+"             return info
+"         endif
+"     endfor
+"
+"     return s:Error('Cannot find a type')
+" endfunc
 func! s:FindCurrentFileInfo(settings)
     if exists('b:CartographeBufferInfo')
         return b:CartographeBufferInfo
     endif
 
     let file_path = expand("%:p")
-    let pairs = items(a:settings)
 
-    for type in keys(a:settings)
-        let pattern = a:settings[type]
-        let variables_info = s:ExtractVariables(file_path, pattern)
+    for [type, info] in items(a:settings)
+        let root = info['root']
+        let pattern = info['location']
+        let variables_info = s:ExtractVariables(root, file_path, pattern)
         let checked_variables = s:CheckExtractedVariables(variables_info)
         if !s:HasError(checked_variables)
+            echo variables_info
             let checked_variables['type'] = type
             let root = s:ExtractRoot(file_path, pattern)
             let info = {
@@ -320,6 +347,7 @@ func! g:CartographeMapFlatten()
     if exists('g:CartographeFlattenMap')
         echo 'Already defined'
         echo g:CartographeFlattenMap
+        echo s:FindCurrentFileInfo(g:CartographeFlattenMap)
         return
     endif
 
