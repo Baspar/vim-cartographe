@@ -113,8 +113,8 @@ func! s:ReadVariables(pattern)
     return variables_info
 endfunc!
 
-func! s:ExtractVariables(root, string_to_match, pattern)
-    let variables_values = matchlist(a:string_to_match, substitute(a:root.'/\(.*\)/'.a:pattern."$", "{[^}]*}", "\\\\([^/]*\\\\)", "g"))[1:]
+func! s:ExtractVariables(string_to_match, pattern)
+    let variables_values = matchlist(a:string_to_match, substitute(a:pattern."$", "{[^}]*}", "\\\\([^/]*\\\\)", "g"))[1:]
     let variables_info = s:ReadVariables(a:pattern)
 
     return {
@@ -123,9 +123,9 @@ func! s:ExtractVariables(root, string_to_match, pattern)
                 \ }
 endfunc
 
-func! s:InjectVariables(string, variables)
-    let string_with_variables = a:string
-    let variables_info = s:ReadVariables(a:string)
+func! s:InjectVariables(type_settings, variables)
+    let string_with_variables = a:type_settings['location']
+    let variables_info = s:ReadVariables(string_with_variables)
     for variable_info in variables_info
         let variable_name = variable_info['name']
         let variable_modifier = variable_info['modifier']
@@ -140,37 +140,14 @@ func! s:InjectVariables(string, variables)
 endfunc!
 
 
-func! s:ExtractRoot(file_path, pattern)
-    let sanitized_path = substitute(a:pattern."$", "{[^}]*}", "\\\\([^/]*\\\\)", "g")
-    return matchlist(a:file_path, '^\(.*\)'.sanitized_path)[1]
+func! s:ExtractRoot(root, file_path, pattern)
+    let matches = matchlist(a:file_path, substitute('^\(.*\)'.a:root.'\(.*\)'.a:pattern."$", "{[^}]*}", "[^/]*", "g"))
+    if len(matches) == 0
+        return s:Error('Cannot extract root')
+    endif
+    return matches[1:2]
 endfunc
 
-" func! s:FindCurrentFileInfo(settings)
-"     if exists('b:CartographeBufferInfo')
-"         return b:CartographeBufferInfo
-"     endif
-"
-"     let file_path = expand("%:p")
-"     let pairs = items(a:settings)
-"
-"     for type in keys(a:settings)
-"         let pattern = a:settings[type]
-"         let variables_info = s:ExtractVariables(file_path, pattern)
-"         let checked_variables = s:CheckExtractedVariables(variables_info)
-"         if !s:HasError(checked_variables)
-"             let checked_variables['type'] = type
-"             let root = s:ExtractRoot(file_path, pattern)
-"             let info = {
-"                         \ 'variables': checked_variables,
-"                         \ 'root': root
-"                         \ }
-"             let b:CartographeBufferInfo = info
-"             return info
-"         endif
-"     endfor
-"
-"     return s:Error('Cannot find a type')
-" endfunc
 func! s:FindCurrentFileInfo(settings)
     if exists('b:CartographeBufferInfo')
         return b:CartographeBufferInfo
@@ -180,16 +157,19 @@ func! s:FindCurrentFileInfo(settings)
 
     for [type, info] in items(a:settings)
         let root = info['root']
+
         let pattern = info['location']
-        let variables_info = s:ExtractVariables(root, file_path, pattern)
+        let variables_info = s:ExtractVariables(file_path, pattern)
         let checked_variables = s:CheckExtractedVariables(variables_info)
-        if !s:HasError(checked_variables)
-            echo variables_info
+        let roots = s:ExtractRoot(root, file_path, pattern)
+        if !s:HasError(checked_variables) && !s:HasError(roots)
+            let [absolute_root, intermediate_root] = roots
             let checked_variables['type'] = type
-            let root = s:ExtractRoot(file_path, pattern)
             let info = {
                         \ 'variables': checked_variables,
-                        \ 'root': root
+                        \ 'intermediate_root': intermediate_root,
+                        \ 'absolute_root': absolute_root,
+                        \ 'type': type
                         \ }
             let b:CartographeBufferInfo = info
             return info
@@ -248,7 +228,16 @@ func! g:CartographeNavigate(type, command)
         return
     endif
 
-    let current_file_info = s:FindCurrentFileInfo(g:CartographeMap)
+    let settings = g:CartographeMapFlatten()
+
+    if !has_key(settings, a:type)
+        echohl WarningMsg
+        echom "[Cartographe] Cannot find information for type '" . a:type . "'"
+        echohl None
+        return
+    endif
+
+    let current_file_info = s:FindCurrentFileInfo(settings)
 
     if s:HasError(current_file_info)
         echohl WarningMsg
@@ -257,20 +246,18 @@ func! g:CartographeNavigate(type, command)
         return
     endif
 
-    if !has_key(g:CartographeMap, a:type)
-        echohl WarningMsg
-        echom "[Cartographe] Cannot find information for type '" . a:type . "'"
-        echohl None
-        return
-    endif
+    let root = settings[a:type]['root']
+    let variables = current_file_info['variables']
+    let intermediate_root = current_file_info['intermediate_root']
+    let absolute_root = current_file_info['absolute_root']
 
-    let root = current_file_info['root']
-    let new_path = s:InjectVariables(g:CartographeMap[a:type], current_file_info['variables'])
+    let new_path = s:InjectVariables(settings[a:type], variables)
 
-    if filereadable(g:CartographeRoot . '/' . new_path)
-        execute a:command root . '/' . new_path
+
+    if filereadable(root . intermediate_root . new_path)
+        execute a:command absolute_root . root . intermediate_root . new_path
     else
-        execute a:command root . '/' . new_path
+        execute a:command absolute_root . root . intermediate_root . new_path
     endif
 endfunc
 
@@ -345,10 +332,7 @@ endfunc
 
 func! g:CartographeMapFlatten()
     if exists('g:CartographeFlattenMap')
-        echo 'Already defined'
-        echo g:CartographeFlattenMap
-        echo s:FindCurrentFileInfo(g:CartographeFlattenMap)
-        return
+        return g:CartographeFlattenMap
     endif
 
     let flattenMap = {}
@@ -361,8 +345,9 @@ func! g:CartographeMapFlatten()
             let key = locationname
             let value = deepcopy(entry)
             let variables = s:ReadVariables(location)
-            let value['location'] = location
+            let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
             let value['variables'] = variables
+            let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
             let flattenMap[key] = value
         endfor
     else
@@ -373,21 +358,23 @@ func! g:CartographeMapFlatten()
                 let key = category . '.' . locationname
                 let value = deepcopy(entry)
                 let variables = s:ReadVariables(location)
-                let value['location'] = location
+                let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
                 let value['variables'] = variables
+                let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
                 let flattenMap[key] = value
             endfor
         endfor
     endif
     let g:CartographeFlattenMap = flattenMap
-    echo flattenMap
+    return flattenMap
 endfunc
 
 if exists('g:CartographeFlattenMap')
     unlet g:CartographeFlattenMap
 endif
 
-nnoremap <leader><leader>g :call g:CartographeMapFlatten()<CR>
+nnoremap <leader><leader>g :echo g:CartographeMapFlatten()<CR>
+nnoremap <leader><leader>h :echo g:FindCurrentFileInfo(g:CartographeFlattenMap)<CR>
 
 command! -nargs=0                                            CartographeList call g:CartographeListTypes()
 command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeComp call g:CartographeListComponents('<args>')
