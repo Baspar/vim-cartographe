@@ -179,14 +179,17 @@ func! s:FindCurrentFileInfo(settings)
     return s:Error('Cannot find a type')
 endfunc
 
-func! s:OpenFZF(current_file_info)
+func! s:OpenFZF(settings, current_file_info)
     let variables = a:current_file_info['variables']
-    let root = a:current_file_info['root']
+    let absolute_root = a:current_file_info['absolute_root']
+    let intermediate_root = a:current_file_info['intermediate_root']
+
     let existing_matched_types = []
     let new_matched_types = []
-    for [type, path_with_variables] in items(g:CartographeMap)
-        let path = s:InjectVariables(g:CartographeMap[type], variables)
-        if filereadable(root . '/' . path)
+    for [type, type_settings] in items(a:settings)
+        let path = s:InjectVariables(type_settings, variables)
+        let root = type_settings['root']
+        if filereadable(absolute_root . root . intermediate_root . path)
             let existing_matched_types = add(existing_matched_types, "\e[0m" . type)
         else
             let new_matched_types = add(new_matched_types, "\e[90m".type)
@@ -262,11 +265,6 @@ func! g:CartographeNavigate(type, command)
 endfunc
 
 func! g:CartographeListTypes()
-    let root = '.'
-    if exists("g:CartographeRoot")
-        let root = g:CartographeRoot
-    endif
-
     if !exists("g:CartographeMap")
         echohl WarningMsg
         echom "[Cartographe] Please define your g:CartographeMap"
@@ -274,7 +272,9 @@ func! g:CartographeListTypes()
         return
     endif
 
-    let current_file_info = s:FindCurrentFileInfo(g:CartographeMap)
+    let settings = g:CartographeMapFlatten()
+
+    let current_file_info = s:FindCurrentFileInfo(settings)
 
     if s:HasError(current_file_info)
         echohl WarningMsg
@@ -283,7 +283,7 @@ func! g:CartographeListTypes()
         return
     endif
 
-    call s:OpenFZF(current_file_info)
+    call s:OpenFZF(settings, current_file_info)
 endfunc
 
 func! g:CartographeListComponents(type)
@@ -373,8 +373,7 @@ if exists('g:CartographeFlattenMap')
     unlet g:CartographeFlattenMap
 endif
 
-nnoremap <leader><leader>g :echo g:CartographeMapFlatten()<CR>
-nnoremap <leader><leader>h :echo g:FindCurrentFileInfo(g:CartographeFlattenMap)<CR>
+nnoremap <leader><leader>g :call g:CartographeListTypes()<CR>
 
 command! -nargs=0                                            CartographeList call g:CartographeListTypes()
 command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeComp call g:CartographeListComponents('<args>')
