@@ -12,6 +12,46 @@ func! s:HasError(res)
     return type(a:res) == type({}) && has_key(a:res, 'Error')
 endfunc
 
+" CartographeMap helper
+func! s:CartographeMapFlatten()
+    if exists('g:CartographeFlattenMap')
+        return g:CartographeFlattenMap
+    endif
+
+    let flattenMap = {}
+
+    if exists('g:CartographeMap.root') && type(g:CartographeMap.root) == type('')
+        let entry = deepcopy(g:CartographeMap)
+        let locations = entry['locations']
+        unlet entry['locations']
+        for [locationname, location] in items(locations)
+            let key = locationname
+            let value = deepcopy(entry)
+            let variables = s:ReadVariables(location)
+            let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
+            let value['variables'] = variables
+            let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
+            let flattenMap[key] = value
+        endfor
+    else
+        for [category, entry] in items(deepcopy(g:CartographeMap))
+            let locations = entry['locations']
+            unlet entry['locations']
+            for [locationname, location] in items(locations)
+                let key = category . '.' . locationname
+                let value = deepcopy(entry)
+                let variables = s:ReadVariables(location)
+                let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
+                let value['variables'] = variables
+                let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
+                let flattenMap[key] = value
+            endfor
+        endfor
+    endif
+    let g:CartographeFlattenMap = flattenMap
+    return flattenMap
+endfunc
+
 " Modifier handling
 func! s:FormatWithModifier(name, modifier)
     if a:modifier == 'pascal'
@@ -199,13 +239,13 @@ func! s:OpenFZF(settings, current_file_info)
 
     let matches_types = existing_matched_types + new_matched_types
 
-    func! Handle_sink(list)
+    func! FzfSink(list)
         let command = get({
                     \ 'ctrl-x': 'split',
                     \ 'ctrl-v': 'vsplit',
                     \ }, a:list[0], 'edit')
         for type in a:list[1:]
-            call g:CartographeNavigate(type, command)
+            call s:CartographeNavigate(type, command)
         endfor
     endfunc
 
@@ -213,11 +253,11 @@ func! s:OpenFZF(settings, current_file_info)
                 \ 'source': matches_types,
                 \ 'options': '--no-sort --ansi --multi --expect=ctrl-v,ctrl-x',
                 \ 'down': len(matches_types)+3,
-                \ 'sink*': function('Handle_sink')
+                \ 'sink*': {a -> FzfSink(a)}
                 \ })
 endfunc
 
-
+" Auto complete
 func! s:CartographeComplete(A,L,P)
     let settings = s:CartographeMapFlatten()
     let partial_argument = substitute(a:L, '^\S\+\s\+', '', '')
@@ -225,7 +265,52 @@ func! s:CartographeComplete(A,L,P)
     return filter(potential_completion, {idx, val -> val =~ "^".partial_argument})
 endfun
 
-func! g:CartographeNavigate(type, command)
+" Main functions
+func! s:CartographeNavigate(type, command)
+    if !exists("g:CartographeMap")
+        echohl WarningMsg
+        echom "[Cartographe] Please define your g:CartographeMap"
+        echohl None
+        return
+    endif
+
+    let settings = s:CartographeMapFlatten()
+
+    let current_file_info = s:FindCurrentFileInfo(settings)
+
+    if s:HasError(current_file_info)
+        echohl WarningMsg
+        echom "[Cartographe] Cannot match current file with any type"
+        echohl None
+        return
+    endif
+
+    if a:type == ''
+        call s:OpenFZF(settings, current_file_info)
+    else
+        if !has_key(settings, a:type)
+            echohl WarningMsg
+            echom "[Cartographe] Cannot find information for type '" . a:type . "'"
+            echohl None
+            return
+        endif
+
+        let root = settings[a:type]['root']
+        let variables = current_file_info['variables']
+        let intermediate_root = current_file_info['intermediate_root']
+        let absolute_root = current_file_info['absolute_root']
+
+        let new_path = s:InjectVariables(settings[a:type], variables)
+
+        if filereadable(root . intermediate_root . new_path)
+            execute a:command absolute_root . root . intermediate_root . new_path
+        else
+            execute a:command absolute_root . root . intermediate_root . new_path
+        endif
+    endif
+endfunc
+
+func! s:CartographeListComponents(type)
     if !exists("g:CartographeMap")
         echohl WarningMsg
         echom "[Cartographe] Please define your g:CartographeMap"
@@ -236,148 +321,55 @@ func! g:CartographeNavigate(type, command)
     let settings = s:CartographeMapFlatten()
 
     if !has_key(settings, a:type)
-        echohl WarningMsg
-        echom "[Cartographe] Cannot find information for type '" . a:type . "'"
-        echohl None
+        echoerr "[Cartographe] Cannot find type '".a:type."' in your g:CartographeMap"
         return
     endif
 
-    let current_file_info = s:FindCurrentFileInfo(settings)
-
-    if s:HasError(current_file_info)
-        echohl WarningMsg
-        echom "[Cartographe] Cannot match current file with any type"
-        echohl None
-        return
-    endif
-
+    let pattern = settings[a:type]['location']
     let root = settings[a:type]['root']
-    let variables = current_file_info['variables']
-    let intermediate_root = current_file_info['intermediate_root']
-    let absolute_root = current_file_info['absolute_root']
-
-    let new_path = s:InjectVariables(settings[a:type], variables)
-
-    if filereadable(root . intermediate_root . new_path)
-        execute a:command absolute_root . root . intermediate_root . new_path
-    else
-        execute a:command absolute_root . root . intermediate_root . new_path
-    endif
-endfunc
-
-func! g:CartographeListTypes()
-    if !exists("g:CartographeMap")
-        echohl WarningMsg
-        echom "[Cartographe] Please define your g:CartographeMap"
-        echohl None
-        return
-    endif
-
-    let settings = s:CartographeMapFlatten()
-
-    let current_file_info = s:FindCurrentFileInfo(settings)
-
-    if s:HasError(current_file_info)
-        echohl WarningMsg
-        echom "[Cartographe] Cannot match current file with any type"
-        echohl None
-        return
-    endif
-
-    call s:OpenFZF(settings, current_file_info)
-endfunc
-
-func! g:CartographeListComponents(type)
-  if !has_key(g:CartographeMap, a:type)
-      echoerr "[Cartographe] Cannot find type '".a:type."' in your g:CartographeMap"
-      return
-  endif
-
-  let fancy_names = {}
-  let pattern = g:CartographeMap[a:type]
-  let files = globpath('.', g:CartographeRoot.'/**/'.substitute(pattern, "{[^}]*}", "*", 'g'))
-
-  for file in split(files, '\n')
-      let infos = s:CheckExtractedVariables(s:ExtractVariables(file, pattern))
-      if s:HasError(infos)
-          continue
-      endif
+    let files = globpath('.', root.'/**/'.substitute(pattern, "{[^}]*}", "*", 'g'))
 
 
-      " TODO: handle no modifier
-      let fancy_name = s:InjectVariables(g:CartographeFancyName, infos)
-      if !has_key(fancy_names, fancy_name)
-          let fancy_names[fancy_name] = {}
-      endif
-      let fancy_names[fancy_name] = { 'file': file }
-  endfor
+    let valid_files = []
+    for file in split(files, '\n')
+        let infos = s:CheckExtractedVariables(s:ExtractVariables(file, pattern))
+        if s:HasError(infos)
+            continue
+        endif
 
-  func! Handle_sink_bis(fancy_names, list)
-      let command = get({
-                  \ 'ctrl-x': 'split',
-                  \ 'ctrl-v': 'vsplit',
-                  \ }, a:list[0], 'edit')
+        call add(valid_files, file)
 
-      for name in a:list[1:]
-          execute command a:fancy_names[name].file
-      endfor
-  endfunc
+        " TODO: handle no modifier
+        " echo infos
+        " let fancy_name = s:InjectVariables("{name:camel}", infos)
+        " if !has_key(fancy_names, fancy_name)
+        "     let fancy_names[fancy_name] = {}
+        " endif
+        " let fancy_names[fancy_name] = { 'file': file }
+    endfor
 
-  call fzf#run({
-              \ 'source': keys(fancy_names),
-              \ 'options': '--no-sort --multi --expect=ctrl-v,ctrl-x',
-              \ 'down': "25%",
-              \ 'sink*': {a -> Handle_sink_bis(fancy_names, a)}
-              \ })
-endfunc
+    func! Handle_sink_bis(list)
+        let command = get({
+                    \ 'ctrl-x': 'split',
+                    \ 'ctrl-v': 'vsplit',
+                    \ }, a:list[0], 'edit')
 
-func! s:CartographeMapFlatten()
-    if exists('g:CartographeFlattenMap')
-        return g:CartographeFlattenMap
-    endif
-
-    let flattenMap = {}
-
-    if exists('g:CartographeMap.root') && type(g:CartographeMap.root) == type('')
-        let entry = deepcopy(g:CartographeMap)
-        let locations = entry['locations']
-        unlet entry['locations']
-        for [locationname, location] in items(locations)
-            let key = locationname
-            let value = deepcopy(entry)
-            let variables = s:ReadVariables(location)
-            let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
-            let value['variables'] = variables
-            let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
-            let flattenMap[key] = value
+        for file in a:list[1:]
+            execute command file
         endfor
-    else
-        for [category, entry] in items(deepcopy(g:CartographeMap))
-            let locations = entry['locations']
-            unlet entry['locations']
-            for [locationname, location] in items(locations)
-                let key = category . '.' . locationname
-                let value = deepcopy(entry)
-                let variables = s:ReadVariables(location)
-                let value['location'] = substitute(location, '\(^/\|/$\)', '', 'g')
-                let value['variables'] = variables
-                let value['root'] = substitute(value['root'], '\(^/\|/$\)', '', 'g')
-                let flattenMap[key] = value
-            endfor
-        endfor
-    endif
-    let g:CartographeFlattenMap = flattenMap
-    return flattenMap
+    endfunc
+
+    call fzf#run({
+                \ 'source': valid_files,
+                \ 'options': '--no-sort --multi --expect=ctrl-v,ctrl-x',
+                \ 'down': "25%",
+                \ 'sink*': {a -> Handle_sink_bis(a)}
+                \ })
 endfunc
 
-if exists('g:CartographeFlattenMap')
-    unlet g:CartographeFlattenMap
-endif
+nnoremap <leader><leader>g :CartographeNav<CR>
 
-nnoremap <leader><leader>g :call g:CartographeListTypes()<CR>
-
-command! -nargs=0                                            CartographeList call g:CartographeListTypes()
-command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeComp call g:CartographeListComponents('<args>')
-command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeNav  call g:CartographeNavigate('<args>', 'edit')
-command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeNavS call g:CartographeNavigate('<args>', 'split')
-command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeNavV call g:CartographeNavigate('<args>', 'vsplit')
+command! -nargs=1 -complete=customlist,s:CartographeComplete CartographeComp call s:CartographeListComponents('<args>')
+command! -nargs=? -complete=customlist,s:CartographeComplete CartographeNav  call s:CartographeNavigate('<args>', 'edit')
+command! -nargs=? -complete=customlist,s:CartographeComplete CartographeNavS call s:CartographeNavigate('<args>', 'split')
+command! -nargs=? -complete=customlist,s:CartographeComplete CartographeNavV call s:CartographeNavigate('<args>', 'vsplit')
