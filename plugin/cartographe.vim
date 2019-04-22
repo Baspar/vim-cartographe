@@ -143,10 +143,6 @@ endfunc!
 func! s:ExtractRoot(root, file_path, pattern)
     let matches = matchlist(a:file_path, substitute('^\(.*\)'.a:root.'\(.*/\)'.a:pattern."$", "{[^}]*}", "[^/]\\\\+", "g"))
 
-    echo a:file_path
-    echo substitute('^\(.*\)'.a:root.'\(.*\)'.a:pattern."$", "{[^}]*}", "[^/]\\\\+", "g")
-    echo matches
-
     if len(matches) == 0
         return s:Error('Cannot extract root')
     endif
@@ -260,20 +256,7 @@ func! g:CartographeNavigate(type, command)
     let intermediate_root = current_file_info['intermediate_root']
     let absolute_root = current_file_info['absolute_root']
 
-    echo "root"
-    echo root
-    echo "variables"
-    echo variables
-    echo "intermediate_root"
-    echo intermediate_root
-    echo "absolute_root"
-    echo absolute_root
-
     let new_path = s:InjectVariables(settings[a:type], variables)
-
-    echo "new_path"
-    echo new_path
-
 
     if filereadable(root . intermediate_root . new_path)
         execute a:command absolute_root . root . intermediate_root . new_path
