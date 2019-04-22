@@ -141,7 +141,12 @@ endfunc!
 
 
 func! s:ExtractRoot(root, file_path, pattern)
-    let matches = matchlist(a:file_path, substitute('^\(.*\)'.a:root.'\(.*\)'.a:pattern."$", "{[^}]*}", "[^/]*", "g"))
+    let matches = matchlist(a:file_path, substitute('^\(.*\)'.a:root.'\(.*/\)'.a:pattern."$", "{[^}]*}", "[^/]\\\\+", "g"))
+
+    echo a:file_path
+    echo substitute('^\(.*\)'.a:root.'\(.*\)'.a:pattern."$", "{[^}]*}", "[^/]\\\\+", "g")
+    echo matches
+
     if len(matches) == 0
         return s:Error('Cannot extract root')
     endif
@@ -218,8 +223,9 @@ endfunc
 
 
 func! s:CartographeComplete(A,L,P)
+    let settings = s:CartographeMapFlatten()
     let partial_argument = substitute(a:L, '^\S\+\s\+', '', '')
-    let potential_completion = copy(keys(g:CartographeMap))
+    let potential_completion = copy(keys(settings))
     return filter(potential_completion, {idx, val -> val =~ "^".partial_argument})
 endfun
 
@@ -231,7 +237,7 @@ func! g:CartographeNavigate(type, command)
         return
     endif
 
-    let settings = g:CartographeMapFlatten()
+    let settings = s:CartographeMapFlatten()
 
     if !has_key(settings, a:type)
         echohl WarningMsg
@@ -254,7 +260,19 @@ func! g:CartographeNavigate(type, command)
     let intermediate_root = current_file_info['intermediate_root']
     let absolute_root = current_file_info['absolute_root']
 
+    echo "root"
+    echo root
+    echo "variables"
+    echo variables
+    echo "intermediate_root"
+    echo intermediate_root
+    echo "absolute_root"
+    echo absolute_root
+
     let new_path = s:InjectVariables(settings[a:type], variables)
+
+    echo "new_path"
+    echo new_path
 
 
     if filereadable(root . intermediate_root . new_path)
@@ -272,7 +290,7 @@ func! g:CartographeListTypes()
         return
     endif
 
-    let settings = g:CartographeMapFlatten()
+    let settings = s:CartographeMapFlatten()
 
     let current_file_info = s:FindCurrentFileInfo(settings)
 
@@ -330,7 +348,7 @@ func! g:CartographeListComponents(type)
               \ })
 endfunc
 
-func! g:CartographeMapFlatten()
+func! s:CartographeMapFlatten()
     if exists('g:CartographeFlattenMap')
         return g:CartographeFlattenMap
     endif
