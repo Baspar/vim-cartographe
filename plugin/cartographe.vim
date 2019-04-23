@@ -331,39 +331,48 @@ func! s:CartographeListComponents(type)
 
 
     let valid_files = []
+    let fancy_names = []
     for file in split(files, '\n')
         let infos = s:CheckExtractedVariables(s:ExtractVariables(file, pattern))
         if s:HasError(infos)
             continue
         endif
 
-        call add(valid_files, file)
+        let fancy_name = []
+        for [variable_name, variable_info] in items(infos)
+            if variable_info['has_modifier']
+                let variable_value = s:FormatWithModifier(variable_info['value'], 'pascal')
+            else
+                let variable_value = variable_info['value']
+            endif
+            if len(keys(infos)) == 1
+                call add(fancy_name, variable_value)
+            else
+                call add(fancy_name, variable_name.': '.variable_value)
+            endif
+        endfor
 
-        " TODO: handle no modifier
-        " echo infos
-        " let fancy_name = s:InjectVariables("{name:camel}", infos)
-        " if !has_key(fancy_names, fancy_name)
-        "     let fancy_names[fancy_name] = {}
-        " endif
-        " let fancy_names[fancy_name] = { 'file': file }
+        call add(fancy_names, join(fancy_name, ', '))
+        call add(valid_files, file)
     endfor
 
-    func! Handle_sink_bis(list)
+    func! Handle_sink_bis(valid_files, list)
         let command = get({
                     \ 'ctrl-x': 'split',
                     \ 'ctrl-v': 'vsplit',
                     \ }, a:list[0], 'edit')
 
         for file in a:list[1:]
-            execute command file
+            let id = split(file, ']\|[')[0]
+            execute command a:valid_files[id]
         endfor
     endfunc
 
     call fzf#run({
-                \ 'source': valid_files,
+                \ 'source': map(fancy_names, {index, item -> '['.index.'] '.item}),
                 \ 'options': '--no-sort --multi --expect=ctrl-v,ctrl-x',
                 \ 'down': "25%",
-                \ 'sink*': {a -> Handle_sink_bis(a)}
+                \ 'sink*': {a -> Handle_sink_bis(valid_files, a)}
                 \ })
 endfunc
 
