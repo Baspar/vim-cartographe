@@ -212,6 +212,9 @@ func! s:inject_roots(raw_path, roots)
     return path
 endfunc
 
+""""""""""""""""""
+" Find file info "
+""""""""""""""""""
 func! s:find_current_file_info(settings)
     if exists('b:CartographeBufferInfo')
         return b:CartographeBufferInfo
@@ -247,6 +250,9 @@ func! s:find_current_file_info(settings)
     return s:error('Cannot find a type')
 endfunc
 
+"""""""""""""""""
+" FZF Utilities "
+"""""""""""""""""
 func! s:open_fzf(settings, current_file_info)
     let variables = a:current_file_info['variables']
     let roots = a:current_file_info['roots']
