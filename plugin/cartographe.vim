@@ -2,3 +2,4 @@ command! -nargs=1 -complete=customlist,cartographe#CartographeComplete Cartograp
 command! -nargs=? -complete=customlist,cartographe#CartographeComplete CartographeNav  call cartographe#CartographeNavigate('<args>', 'edit')
 command! -nargs=? -complete=customlist,cartographe#CartographeComplete CartographeNavS call cartographe#CartographeNavigate('<args>', 'split')
 command! -nargs=? -complete=customlist,cartographe#CartographeComplete CartographeNavV call cartographe#CartographeNavigate('<args>', 'vsplit')
+command! -nargs=* CartographeExec call cartographe#CartographeExec('<args>')

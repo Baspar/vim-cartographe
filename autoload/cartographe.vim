@@ -414,3 +414,27 @@ func! cartographe#CartographeListComponents(type)
                 \ 'sink*': {a -> Handle_sink_bis(valid_files, a)}
                 \ })
 endfunc
+
+func! cartographe#CartographeExec(command)
+    if !exists("g:CartographeMap")
+        echohl WarningMsg
+        echom "[Cartographe] Please define your g:CartographeMap"
+        echohl None
+        return
+    endif
+
+    let settings = s:flatten_config_map()
+
+    " Try to identify current file
+    let current_file_info = s:find_current_file_info(settings)
+    if s:has_error(current_file_info)
+        echohl WarningMsg
+        echom "[Cartographe] Cannot match current file with any type"
+        echohl None
+        return
+    endif
+
+    let command_with_variables = s:inject_variables(a:command, current_file_info.variables)
+
+    execute command_with_variables
+endfunc
