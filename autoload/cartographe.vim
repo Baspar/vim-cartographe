@@ -72,7 +72,12 @@ func! s:format_with_modifier(name, modifier)
     elseif a:modifier == 'kebab'
         return join(map(a:name, {_,w -> tolower(w)}), '-')
     else
-        return join(a:name, '')
+        return substitute(
+                    \ join(map(a:name, {_,w -> tolower(w)}), '_'),
+                    \ '\%(_\|^\)\(\l\)',
+                    \ '\U\1',
+                    \ 'g'
+                    \ )
     endif
 endfunc
 
