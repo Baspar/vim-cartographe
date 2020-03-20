@@ -291,7 +291,8 @@ func! s:open_fzf(settings, current_file_info)
                 \ 'source': matches_types,
                 \ 'options': '--no-sort --ansi --multi --expect=ctrl-v,ctrl-x',
                 \ 'down': len(matches_types)+3,
-                \ 'sink*': {a -> FzfSink(a)}
+                \ 'sink*': {a -> FzfSink(a)},
+                \ 'window': 'call FloatingFZF(2)'
                 \ })
 endfunc
 
