@@ -5,6 +5,15 @@ Given a configuration, you'll be able to jump between file whose path is defined
 
 You may want to install FZF as a plugin to enable FZF splits.
 
+## Installation
+
+I recommend using [vim-plug](https://github.com/junegunn/vim-plug) as a plugin manager.
+From there, simply add
+```vim
+Plug 'baspar/vim-cartographe'
+```
+to your plugin list
+
 ## Usage
 
 ### Configuration
